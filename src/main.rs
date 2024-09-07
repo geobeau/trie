@@ -38,14 +38,17 @@ impl Node {
         let new_offset = diff.leading_zeros();
         if diff == 0 {
             // Both value[0] and self.prefix are equal
-            return left_child.unwrap().insert(value[1..])
+            let mut left_child_mut = self.left_child.unwrap().borrow_mut();
+            return left_child_mut.insert(&value[1..])
         }
-        if new_offset > self.offset {
-            if self.right_child.is_some()
-                self.split
+        if new_offset > (self.offset as u32) {
+            if self.right_child.is_some() {
+                self.split();
+            }
             return 
-        } else if new_offset == self.offset {
-            return right_child.unwrap().insert(value[1..])
+        } else if new_offset == (self.offset as u32) {
+            let mut right_child_mut = self.right_child.unwrap().borrow_mut();
+            return right_child_mut.insert(&value[1..])
         } else {
             self.split_before()
         }
@@ -83,7 +86,7 @@ fn main() {
     let data2 = vec![11u8; 3];
     let data3 = vec![12u8; 3];
 
-    let patricia = Patricia::new();
+    let mut patricia = Patricia::new();
     patricia.insert(data1);
     patricia.insert(data2);
     patricia.insert(data3);
