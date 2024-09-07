@@ -1,4 +1,5 @@
-mod patricia;
+pub mod patricia;
+pub mod hot;
 
 fn main() {
     let data1 = vec![10u8, 11u8, 12u8];

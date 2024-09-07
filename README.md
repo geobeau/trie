@@ -5,7 +5,13 @@ https://dbis-informatik.uibk.ac.at/sites/default/files/2022-04/binna_tods_2022.p
 
 Current implementation is a just a patricia for learning purpose
 
-# Byte trie
+
+# Implentation
+
+To understand properly the inner working of hot and how to implement it. I need to implement a patricia like trie.
+
+
+## Naive patricia byte trie
  
 This describe evolution of the trie during insertion. It is helpful so I don't have
 to re-understand all the code every time I come back to this project.
@@ -18,7 +24,7 @@ It operates on bits so that it can be binary, there can be at maximum 2 child: 0
 > Depth is the byte idx (because we operate on random sized byte array (because we want
 to store a string))
 
-## Algo
+### Algo
 
 
 Trie after inserting:
@@ -120,4 +126,16 @@ because old offset (MAX) is bigger than the newer offset: 2.
 
 1001 xor 1011 = 0010
 offset = 2
+
+## Caveats
+
+This implementation has plenty of issues:
+- Nodes are too small so we will spend most of the time on pointer chazing
+- Lot of repetition within a single byte: we can have more 256 nodes for each bytes with a lot of repetition
+
+## Going back to HOT
+
+### Bi-Node
+
+BiNode are nodes within a single HotNode. 
 
