@@ -1,16 +1,21 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, process::Child, rc::Rc};
 
 
 type NodePointer = Rc<RefCell<Node>>;
 
 struct Node {
-    // Prefix store the common bits until reaching offset
+    /// Prefix store the common bits until reaching offset
     prefix: u8,
-    // Offset points at the bit that is different
+    /// Offset points at the bit that is different
     offset: u8,
-    // Left child is the source child (with prefix)
+    /// Depth is the byte position in the original byte array
+    depth: u8,
+    /// leaf is true if a record ended there. It might still have
+    /// children! (because records have varied length) 
+    leaf: bool,
+    /// Left child is the source child (with prefix)
     left_child: Option<NodePointer>,
-    // Right child is the one with a different bit
+    /// Right child is the one with a different bit
     right_child: Option<NodePointer>
 }
 
@@ -22,38 +27,93 @@ struct Node {
 
 impl Node {
 
-    pub fn new(value: &[u8]) -> Self {
+    pub fn new(value: &[u8], depth: u8) -> Self {
         assert!(!value.is_empty(), "Value should not be empty");
-        let child = if value.len() > 1 {
+        let child = if value.len() < depth.into() {
             // Recursively create child nodes
-            Some(Rc::new(RefCell::new(Node::new(&value[1..]))))
+            Some(Rc::new(RefCell::new(Node::new(&value, depth+1))))
         } else {
             None
         };
-        Node { prefix: value[0], offset: u8::MAX, left_child: child, right_child: None }
+        Node { prefix: value[depth as usize], depth: 0, offset: u8::MAX, leaf: child.is_none(), left_child: child, right_child: None }
     }
 
-    pub fn insert(&mut self, value: &[u8]) {
-        let diff = value[0] ^ self.prefix;
+    pub fn insert(&mut self, value: &[u8], depth: u8) {
+        let diff = value[depth as usize] ^ self.prefix;
         let new_offset = diff.leading_zeros();
+        // If there is no diff between the reference and the added value, follow the left child
         if diff == 0 {
-            // Both value[0] and self.prefix are equal
-            let mut left_child_mut = self.left_child.unwrap().borrow_mut();
-            return left_child_mut.insert(&value[1..])
-        }
-        if new_offset > (self.offset as u32) {
-            if self.right_child.is_some() {
-                self.split();
+            if value.len() == (depth - 1).into() {
+                if self.leaf {
+                    // Record already exists in the trie
+                    return
+                }
+                self.leaf = true;
+                return;
             }
-            return 
-        } else if new_offset == (self.offset as u32) {
-            let mut right_child_mut = self.right_child.unwrap().borrow_mut();
-            return right_child_mut.insert(&value[1..])
-        } else {
-            self.split_before()
+            let mut left_child_mut = self.left_child.as_ref().unwrap().borrow_mut();
+            left_child_mut.insert(&value, depth);
+            return
         }
 
+        // If there is a diff but it is on the offset that existed before, follow the right child
+        if new_offset == (self.offset as u32) {
+            let mut right_child_mut = self.right_child.as_ref().unwrap().borrow_mut();
+            right_child_mut.insert(&value, depth);
+            return
+        }
 
+        // At this point, a new branch of the tree is going to be created
+        let new_child = Node::new(&value, depth);
+
+        if new_offset > (self.offset as u32) {
+            self.split_after(new_offset as u8, new_child);
+            return
+        }  else {
+            self.split_before(new_offset as u8, new_child);
+            return
+        }
+    }
+
+    /// This is called if the offset is bigger than the one already existing (implying that a right
+    /// child already exists).
+    /// 
+    /// To add another right child, the current node needs to be duplicated and the new child+offset
+    /// added to the duplicata. The duplicata is then added as left child.
+    pub fn split_after(&mut self, new_child_offset: u8, new_child: Node) {
+        let mut copy_node = Node { prefix: self.prefix, depth: self.depth, offset: self.offset, leaf: self.leaf,
+            left_child: self.left_child.clone(), right_child: None };
+        
+        copy_node.offset = new_child_offset;
+        copy_node.right_child = Some(Rc::new(RefCell::new(new_child)));
+        self.left_child = Some(Rc::new(RefCell::new(copy_node)));
+    }
+
+    /// This is called if the current node as an offset bigger than the new one. A right child might
+    /// not be present.
+    pub fn split_before(&mut self, new_child_offset: u8, new_child: Node) {
+        // If there are no right child, just insert the new one here. No need to duplicate the current
+        // one.
+        if self.right_child.is_none() {
+            self.right_child = Some(Rc::new(RefCell::new(new_child)));
+            self.offset = new_child_offset;
+            return;
+        }
+
+        // TODO: would .clone() be similar/better?
+        let copy_node = Node { prefix: self.prefix, depth: self.depth, offset: self.offset, leaf: self.leaf,
+            left_child: self.left_child.clone(), right_child: None };
+        
+        // Compared to split after, the new child is added to the current node. The old copy of current
+        // node is pushed down
+        self.offset = new_child_offset;
+        self.right_child = Some(Rc::new(RefCell::new(new_child)));
+        self.left_child = Some(Rc::new(RefCell::new(copy_node)));
+    }
+
+    /// NOT IMPLEMENTED YET: search if record exists in the trie
+    pub fn exists(&self, value: &[u8], depth: u8) -> bool {
+        return false
     }
 
 }
@@ -71,13 +131,16 @@ impl Patricia {
 
     pub fn insert(&mut self, value: Vec<u8>) {
         match &mut self.root {
-            Some(root) => root.as_ref().borrow_mut().insert(&value),
-            None => self.root = Some(Rc::new(RefCell::new(Node::new(&value)))),
+            Some(root) => root.as_ref().borrow_mut().insert(&value, 0),
+            None => self.root = Some(Rc::new(RefCell::new(Node::new(&value, 0)))),
         }
     }
 
-    pub fn exists(&self, _: Vec<u8>) -> bool {
-        return false
+    pub fn exists(&self, value: Vec<u8>) -> bool {
+        return match &self.root {
+            Some(root) => root.as_ref().borrow().exists(&value, 0),
+            None => false,
+        }
     }
 }
 
@@ -87,9 +150,9 @@ fn main() {
     let data3 = vec![12u8; 3];
 
     let mut patricia = Patricia::new();
-    patricia.insert(data1);
-    patricia.insert(data2);
-    patricia.insert(data3);
+    patricia.insert(data1.clone());
+    patricia.insert(data2.clone());
+    patricia.insert(data3.clone());
 
     assert!(patricia.exists(data1));
 }

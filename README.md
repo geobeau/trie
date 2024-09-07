@@ -93,14 +93,14 @@ stateDiagram-v2
     node1: 1001 / 1 / depth-0
     node1bis: 1001 / 2 / depth-0
 
-    node2: 1011 / 8 / depth-1
-    node3: 1111 / 8 / depth-2
+    node2: 1011 / MAX / depth-1
+    node3: 1111 / MAX / depth-2
 
-    node4: 1101 / 8 / depth-0
-    node5: 1111 / 8 / depth-1
-    node6: 1101 / 8 / depth-2
+    node4: 1101 / MAX / depth-0
+    node5: 1111 / MAX / depth-1
+    node6: 1101 / MAX / depth-2
 
-    node7: 1011 / 8 / depth-0
+    node7: 1011 / MAX / depth-0
     [*] --> node1
 
     node1 --> node1bis
